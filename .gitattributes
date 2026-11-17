@@ -1,0 +1,4 @@
+data/raw/*.txt -text
+*.py text eol=lf
+*.jsonl text eol=lf
+*.json text eol=lf

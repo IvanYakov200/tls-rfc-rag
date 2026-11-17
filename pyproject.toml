@@ -1,0 +1,9 @@
+[project]
+name = "tls-evidence-rag"
+version = "0.1.0"
+description = "Russian evidence retrieval over historical TLS specifications"
+requires-python = ">=3.11,<3.14"
+dependencies = ["numpy==2.2.6", "onnxruntime==1.23.2", "tokenizers==0.22.2"]
+
+[tool.uv]
+package = false
