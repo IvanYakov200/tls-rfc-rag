@@ -48,13 +48,13 @@ def main():
         p = sub.add_parser(name)
         p.add_argument("--split", choices=["dev", "test"], default="dev")
         if name == "run":
-            p.add_argument("--methods", nargs="+", choices=["A", "B", "C"], default=["A","B"])
+            p.add_argument("--methods", nargs="+", choices=["A", "B", "C", "D"], default=["A","B"])
         if name == "replay":
             p.add_argument("--id", default=None)
             p.add_argument("--method", default="A")
     p = sub.add_parser("ask")
     p.add_argument("question")
-    p.add_argument("--method", choices=["A", "B", "C"], default="B")
+    p.add_argument("--method", choices=["A", "B", "C", "D"], default="B")
     args = parser.parse_args()
     raw, passages = load()
     if args.cmd == "verify":
@@ -96,7 +96,7 @@ def main():
                                 raise ValueError("Saved quote differs from source")
                             print(f"  {c['text']}\n  RFC {c['rfc']} §{c['section']}, bytes [{c['start_byte']}, {c['end_byte']})\n  {quote.strip()}")
         return
-    from retrieval import Search, check_assets
+    from retrieval import Search, check_assets, with_page_continuations
     if args.cmd == "setup":
         check_assets(download=True)
         return
@@ -128,6 +128,8 @@ def main():
                 save(cached, translate(question))
             en = cached.read_text()
         ranks = search.rank(question, en)
+        if "D" in methods:
+            ranks["D"] = list(with_page_continuations(ranks["B"], passages, raw))
         for m in methods:
             hits = [passages[int(i)] for i in ranks[m][:K]]
             row = record(q, m, hits, raw)
