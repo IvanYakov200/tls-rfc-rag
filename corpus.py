@@ -41,7 +41,7 @@ def read_corpus():
     return raw
 
 
-def passages(rfc, blob):
+def passages(rfc, blob, *, paragraphs=False):
     section = heading = ""
     start = end = offset = words = 0
     blank = False
@@ -72,7 +72,7 @@ def passages(rfc, blob):
             continue
         if not section:
             continue
-        if words and ((blank and words >= 67) or words >= 145):
+        if words and (blank if paragraphs else ((blank and words >= 67) or words >= 145)):
             yield emit()
             words = 0
         if not words:

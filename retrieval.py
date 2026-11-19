@@ -84,25 +84,6 @@ def tokens(s):
     return re.findall(r"[\w]+(?:[.-][\w]+)*", s.lower())
 
 
-def with_page_continuations(ranking, passages, raw):
-    """Put a same-section continuation immediately after its retrieved page."""
-    seen = set()
-    for idx in ranking:
-        i = int(idx)
-        if i in seen:
-            continue
-        seen.add(i)
-        yield i
-        if i + 1 >= len(passages) or i + 1 in seen:
-            continue
-        current, following = passages[i:i + 2]
-        if (current.rfc, current.section) != (following.rfc, following.section):
-            continue
-        if b"\f" in raw[current.rfc][current.end:following.start]:
-            seen.add(i + 1)
-            yield i + 1
-
-
 class Search:
     def __init__(self, passages):
         self.encoder = Encoder()
@@ -114,7 +95,7 @@ class Search:
         dl = np.array([sum(d.values()) for d in self.counts])
         self.norm = 1.2 * (.25 + .75 * dl / dl.mean())
 
-    def rank(self, question, translated=None, *, candidates=None):
+    def rank(self, question, *, candidates=None):
         vec = self.encoder.encode(["query: " + question])[0]
         pool = np.arange(len(self.matrix)) if candidates is None else np.asarray(candidates, dtype=int)
         dense_scores = self.matrix @ vec
@@ -131,7 +112,4 @@ class Search:
                 for rank, i in enumerate(ranking, 1):
                     scores[int(i)] += 1 / (60 + rank)
             return sorted(scores, key=scores.get, reverse=True)
-        result = {"A": dense, "B": fuse(question)}
-        if translated:
-            result["C"] = fuse(translated)
-        return result
+        return {"A": dense, "B": fuse(question)}

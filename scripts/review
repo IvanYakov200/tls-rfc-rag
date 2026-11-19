@@ -1,5 +1,0 @@
-#!/bin/sh
-set -eu
-cd "$(dirname "$0")/.."
-exec uv run --no-project --isolated --python 3.12.12 --with jupyterlab==4.4.10 \
-    --cache-dir .runtime/uv-cache jupyter-lab rag_review.ipynb

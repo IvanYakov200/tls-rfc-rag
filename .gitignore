@@ -3,4 +3,7 @@
 __pycache__/
 *.pyc
 .DS_Store
+.anymodel-key
+.env
 assignment_senior_llm_rag.pdf
+skoltech-rag.zip
