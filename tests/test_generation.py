@@ -2,15 +2,15 @@ import json
 import unittest
 from unittest.mock import patch
 
-from corpus import Passage
-from generator import answer
+from tls_rag.corpus import Passage
+from tls_rag.generation import answer
 
 
 class GenerationTest(unittest.TestCase):
     def generate(self, *responses, multiple=False):
         raw = {1: b"One. Two."}
         hits = [Passage(1, "1", "Example", 0, 9, "One. Two.")]
-        with patch("generator.structured_completion", side_effect=responses) as api:
+        with patch("tls_rag.generation.structured_completion", side_effect=responses) as api:
             row = answer("Question?", hits, raw, multiple=multiple, transport=api)
         return row, [call.args for call in api.call_args_list]
 
@@ -55,3 +55,41 @@ class GenerationTest(unittest.TestCase):
                     self.assertEqual([c["quote"] for c in row["claims"][0]["citations"]], ["Two.", "One."])
                 else:
                     self.assertEqual((row["status"], row["claims"]), ("generation_failed", []))
+
+
+class SelectionFailureTest(unittest.TestCase):
+    def test_batch_records_failure_then_processes_next_question(self):
+        import io
+        import sys
+        from contextlib import redirect_stdout
+        from unittest.mock import Mock
+        from tls_rag import cli
+
+        passages = [Passage(i, "1", "Example", 0, 4, "One.") for i in range(5)]
+        selected = {"done_reason": "stop", "message": {"content": '{"ids":[1,2,3,4,5]}'}}
+        invalid = {"done_reason": "stop", "message": {"content": '{"ids":[1,1,2,3,4]}'}}
+        batch = [{"id": str(i), "question": "Question?"} for i in range(2)]
+        retrieval = Mock()
+        retrieval.Search.return_value.rank.return_value = {"B": list(range(5))}
+        for method, failure in [("final", TimeoutError("timeout")), ("reranked", invalid), ("multi", invalid)]:
+            output = io.StringIO()
+            with (self.subTest(method=method), redirect_stdout(output),
+                  patch.dict(sys.modules, {"tls_rag.retrieval": retrieval}),
+                  patch.object(sys, "argv", ["rag.py", "run", "--method", method]),
+                  patch("tls_rag.cli.load", return_value=({}, passages)), patch("tls_rag.cli.questions", return_value=batch),
+                  patch("tls_rag.llm_client.api_key"), patch("tls_rag.generation.structured_completion", side_effect=[failure, selected]),
+                  patch("tls_rag.pipeline.answer", return_value={"status": "insufficient", "claims": []}) as answer_call,
+                  self.assertRaises(SystemExit) as exit_status):
+                cli.main()
+            first, second = map(json.loads, output.getvalue().splitlines())
+            self.assertEqual(exit_status.exception.code, 1)
+            self.assertEqual((first["id"], first["status"], first["error_stage"]), ("0", "generation_failed", "selection"))
+            self.assertTrue(first["error"])
+            self.assertEqual(first["pool"], [p.key for p in passages])
+            self.assertEqual((first["retrieved"], first["claims"], first["attempts"]), ([], [], []))
+            self.assertEqual((second["id"], second["status"], second["retrieved"]), ("1", "insufficient", first["pool"]))
+            answer_call.assert_called_once()
+            if method == "multi":
+                from tls_rag.generation import generation_prompt
+                self.assertEqual(answer_call.call_args.kwargs,
+                                 {"multiple": True, "system": generation_prompt(True, False)})

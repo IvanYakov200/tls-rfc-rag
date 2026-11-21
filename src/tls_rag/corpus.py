@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "data"
 CACHE = ROOT / ".runtime"
 HEADING = re.compile(r"^((?:[0-9]+(?:\.[0-9]+)*)|(?:Appendix [A-Z])|(?:[A-Z](?:\.[0-9]+)*))\.\s+(\S.*)")
@@ -90,7 +90,7 @@ def load():
 
 
 def questions(split):
-    return [json.loads(line) for line in (DATA / f"{split}.jsonl").read_text().splitlines() if line]
+    return [json.loads(line) for line in (DATA / "questions" / f"{split}.jsonl").read_text().splitlines() if line]
 
 
 def slices(raw, spans):

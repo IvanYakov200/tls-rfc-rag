@@ -1,67 +1,12 @@
-"""Structured evidence selection and cited answers via AnyModel."""
+"""Structured passage selection and cited answer generation."""
 import json
-import os
 import re
-import subprocess
-from pathlib import Path
 from http.client import HTTPException
 from time import monotonic
 
+from .llm_client import structured_completion
+
 K = 5
-MODEL = "cx/gpt-6.1-sol"
-URL = "https://anymodel.org/v1/chat/completions"
-
-
-def structured_completion(messages, schema, limit):
-    body = {"model": MODEL, "messages": messages, "stream": True,
-            "max_completion_tokens": limit,
-            "stream_options": {"include_usage": True},
-            "response_format": {"type": "json_schema", "json_schema": {
-                "name": "cited_answer", "strict": True, "schema": schema}}}
-    # Keep the bearer token off the command line. curl reads headers from stdin.
-    response = subprocess.run(
-        ["curl", "--silent", "--show-error", "--max-time", "240", "--header", "@-",
-         "--header", "Content-Type: application/json", "--data-binary", json.dumps(body),
-         "--write-out", "\n%{http_code}", URL],
-        input="Authorization: Bearer " + api_key() + "\n",
-        text=True, capture_output=True)
-    if response.returncode:
-        raise OSError(f"curl exited with code {response.returncode}")
-    stream, _, status = response.stdout.rpartition("\n")
-    if status != "200":
-        raise OSError(f"AnyModel HTTP {status}")
-    pieces, reason, usage = [], None, {}
-    for line in stream.splitlines():
-        line = line.strip()
-        if not line.startswith("data:"):
-            continue
-        data = line[5:].strip()
-        if data == "[DONE]":
-            break
-        event = json.loads(data)
-        if "error" in event:
-            raise ValueError("Gateway returned an error during streaming")
-        usage = event.get("usage") or usage
-        for choice in event.get("choices", []):
-            pieces.append(choice.get("delta", {}).get("content") or "")
-            reason = choice.get("finish_reason") or reason
-    if reason is None:
-        raise ValueError("Missing stream finish_reason")
-    return {"message": {"content": "".join(pieces)}, "done_reason": reason,
-            "prompt_eval_count": usage.get("prompt_tokens"), "eval_count": usage.get("completion_tokens")}
-
-
-def api_key():
-    key = os.getenv("ANYMODEL_API_KEY")
-    if not key:
-        local = Path(__file__).with_name(".anymodel-key")
-        if local.exists():
-            key = local.read_text().strip()
-    if not key:
-        raise ValueError("Set ANYMODEL_API_KEY before running a live request")
-    return key
-
-
 POOL_SIZE = 40
 INSTRUCTION = """Select exactly five distinct numbered passages as evidence for the user's question.
 First identify each fact requested and the relevant RFC/version. Choose passages that explicitly support
@@ -97,10 +42,33 @@ def select(question, candidates):
     return [candidates[i - 1] for i in ids], response
 
 
-SYSTEM = """Ответь на русском по предоставленным выдержкам из RFC. Для сравнения редакций нужны доказательства для обеих сторон. Если на существенную часть вопроса нельзя ответить, верни пустой список claims. Иначе разбей ответ на проверяемые утверждения. Для каждого утверждения выбери один номер evidence (число в квадратных скобках), который его подтверждает. Для разных источников создай отдельные утверждения. Не копируй цитату. Пиши кратко. Сохраняй различие MUST и SHOULD. Не добавляй сведений из памяти."""
+INTRO = "Ответь на русском по предоставленным выдержкам из RFC. Для сравнения редакций нужны доказательства для обеих сторон. Если на существенную часть вопроса нельзя ответить, верни пустой список claims. Иначе разбей ответ на проверяемые утверждения."
+SINGLE_CITATION = "Для каждого утверждения выбери один номер evidence (число в квадратных скобках), который его подтверждает. Для разных источников создай отдельные утверждения."
+MULTIPLE_CITATIONS = "Для каждого утверждения укажи в evidence_ids номера выдержек, которые вместе подтверждают все его части. Выбирай только необходимые выдержки, без повторяющихся номеров."
+NO_REPEAT = "Не повторяй уже подтверждённые утверждения в итоговой сводке."
+ENDING = "Не копируй цитату. Пиши кратко. Сохраняй различие MUST и SHOULD. Не добавляй сведений из памяти."
 
 
-MULTI_PROMPT = """Ответь на русском по предоставленным выдержкам из RFC. Для сравнения редакций нужны доказательства для обеих сторон. Если на существенную часть вопроса нельзя ответить, верни пустой список claims. Иначе разбей ответ на проверяемые утверждения. Для каждого утверждения укажи в evidence_ids номера выдержек, которые вместе подтверждают все его части. Выбирай только необходимые выдержки, без повторяющихся номеров. Не повторяй уже подтверждённые утверждения в итоговой сводке. Не копируй цитату. Пиши кратко. Сохраняй различие MUST и SHOULD. Не добавляй сведений из памяти."""
+def generation_prompt(multiple, no_repeat):
+    parts = [INTRO, MULTIPLE_CITATIONS if multiple else SINGLE_CITATION]
+    if no_repeat:
+        parts.append(NO_REPEAT)
+    return " ".join([*parts, ENDING])
+
+
+DIRECT_PROMPT = (
+    "Ты отвечаешь по RFC на русском. Сначала для каждой части вопроса найди точное правило в выдержках."
+    " Сформулируй его как короткий прямой ответ. Верни claims: один элемент на каждый запрошенный факт"
+    " или сторону сравнения. В evidence_ids перечисли номера всех выдержек, из которых следует именно"
+    " этот текст. Переводи границы требования буквально: кто, при каком условии, MUST/SHOULD/MAY,"
+    " что именно разрешено или запрещено. Включи необходимые оговорки источника."
+    " Для вопроса о значении дай значение; для вопроса о правиле дай правило."
+    " Закончи сразу после ответа на последнюю часть. Подробности реализации и повторные выводы опусти."
+    " Если существенная часть не подтверждается выдержками, верни пустой claims."
+)
+
+SYSTEM = generation_prompt(False, False)
+MULTI_PROMPT = generation_prompt(True, True)
 
 
 def answer_schema(count, multiple=False):

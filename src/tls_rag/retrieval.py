@@ -13,7 +13,7 @@ import numpy as np
 import onnxruntime as ort
 from tokenizers import Tokenizer
 
-from corpus import CACHE
+from .corpus import CACHE
 
 REV = "614241f622f53c4eeff9890bdc4f31cfecc418b3"
 MODEL = "model_qint8_avx512_vnni.onnx"
@@ -95,10 +95,13 @@ class Search:
         dl = np.array([sum(d.values()) for d in self.counts])
         self.norm = 1.2 * (.25 + .75 * dl / dl.mean())
 
+    def dense_scores(self, vec):
+        return self.matrix @ vec
+
     def rank(self, question, *, candidates=None):
         vec = self.encoder.encode(["query: " + question])[0]
         pool = np.arange(len(self.matrix)) if candidates is None else np.asarray(candidates, dtype=int)
-        dense_scores = self.matrix @ vec
+        dense_scores = self.dense_scores(vec)
         dense = pool[np.argsort(-dense_scores[pool], kind="stable")]
         def fuse(query):
             hits = np.zeros(len(dense))
