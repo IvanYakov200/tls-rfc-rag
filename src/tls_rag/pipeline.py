@@ -58,9 +58,10 @@ def finish(question, pool, raw, method):
                     "duration_s": round(monotonic() - started, 2)}
     else:
         hits = pool[:K]
-    if method in ("multi", "faceted", "direct"):
-        prompt = DIRECT_PROMPT if method == "direct" else generation_prompt(True, False)
-        result = answer(question, hits, raw, multiple=True, system=prompt)
+    if method == "direct":
+        result = answer(question, hits, raw, multiple=True, system=DIRECT_PROMPT)
+    elif method in ("multi", "faceted"):
+        result = answer(question, hits, raw, multiple=True, system=generation_prompt(True, False))
     elif method == "single_no_repeat":
         result = answer(question, hits, raw, system=generation_prompt(False, True))
     else:

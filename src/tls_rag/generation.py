@@ -46,7 +46,16 @@ INTRO = "Ответь на русском по предоставленным в
 SINGLE_CITATION = "Для каждого утверждения выбери один номер evidence (число в квадратных скобках), который его подтверждает. Для разных источников создай отдельные утверждения."
 MULTIPLE_CITATIONS = "Для каждого утверждения укажи в evidence_ids номера выдержек, которые вместе подтверждают все его части. Выбирай только необходимые выдержки, без повторяющихся номеров."
 NO_REPEAT = "Не повторяй уже подтверждённые утверждения в итоговой сводке."
-ENDING = "Не копируй цитату. Пиши кратко. Сохраняй различие MUST и SHOULD. Не добавляй сведений из памяти."
+RUSSIAN_STYLE = (
+    " В тексте каждого утверждения передавай силу требования естественными русскими словами:"
+    " MUST — обязан, MUST NOT — запрещено, SHOULD — рекомендуется, SHOULD NOT — не рекомендуется,"
+    " MAY — может или разрешается. Согласуй слова по роду и числу."
+    " Не дублируй английское ключевое слово в скобках. Переводи и обычные технические термины:"
+    " handshake — рукопожатие, alert — оповещение, cipher suite — набор шифров."
+    " Имена сообщений, полей, алгоритмов и коды оповещений сохраняй точно:"
+    " например, сообщение ClientHello или оповещение insufficient_security."
+)
+ENDING = "Не копируй цитату. Пиши кратко. Не добавляй сведений из памяти." + RUSSIAN_STYLE
 
 
 def generation_prompt(multiple, no_repeat):
@@ -60,11 +69,12 @@ DIRECT_PROMPT = (
     "Ты отвечаешь по RFC на русском. Сначала для каждой части вопроса найди точное правило в выдержках."
     " Сформулируй его как короткий прямой ответ. Верни claims: один элемент на каждый запрошенный факт"
     " или сторону сравнения. В evidence_ids перечисли номера всех выдержек, из которых следует именно"
-    " этот текст. Переводи границы требования буквально: кто, при каком условии, MUST/SHOULD/MAY,"
+    " этот текст. Переводи границы требования буквально: кто, при каком условии,"
     " что именно разрешено или запрещено. Включи необходимые оговорки источника."
     " Для вопроса о значении дай значение; для вопроса о правиле дай правило."
     " Закончи сразу после ответа на последнюю часть. Подробности реализации и повторные выводы опусти."
     " Если существенная часть не подтверждается выдержками, верни пустой claims."
+    + RUSSIAN_STYLE
 )
 
 SYSTEM = generation_prompt(False, False)
@@ -87,7 +97,6 @@ def answer_schema(count, multiple=False):
         claim["properties"]["evidence_ids"] = {"type": "array", "minItems": 1, "items": index}
     claims = {"type": "array", "items": claim} if count else {"const": []}
     return {"type": "object", "additionalProperties": False, "required": ["claims"], "properties": {"claims": claims}}
-
 
 
 def evidence_context(hits, raw):
@@ -139,7 +148,8 @@ def answer(question, hits, raw, *, transport=structured_completion, system=None,
                 continue
             if res.get("done") is False or attempt["done_reason"] not in (None, "stop"):
                 raise ValueError("unexpected completion state")
-            claims = json.loads(output)["claims"]
+            parsed = json.loads(output)
+            claims = parsed["claims"]
             if not isinstance(claims, list):
                 raise ValueError("invalid claims")
             for claim in claims:

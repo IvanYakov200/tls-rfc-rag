@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>RFC / Поиск по TLS</title><link rel="stylesheet" href="/chat.css"><script defer src="/chat.js"></script></head>
+<body><header><div class="wrap"><strong>RFC<span> / </span>TLS</strong><span class="local">Локальный чат</span></div></header>
+<main class="wrap">
+  <aside>
+    <nav id="sections" aria-label="Разделы чата">
+      <button type="button" aria-controls="ask-view" aria-pressed="true">Новый вопрос</button>
+      <button type="button" aria-controls="examples-view" aria-pressed="false">Примеры вопросов</button>
+    </nav>
+  </aside>
+  <section id="ask-view" aria-labelledby="ask-title">
+    <h1 id="ask-title">Новый вопрос</h1>
+    <form id="form">
+      <label for="question">Ваш вопрос о TLS</label>
+      <textarea id="question" rows="3" maxlength="2000" placeholder="Введите вопрос"></textarea>
+      <div class="bar"><button id="send" type="submit" disabled>Спросить</button></div>
+    </form>
+    <p id="notice" role="status"></p>
+    <article id="answer" aria-label="Ответ"></article>
+  </section>
+  <section id="examples-view" aria-labelledby="examples-title" hidden>
+    <h1 id="examples-title">Примеры вопросов</h1>
+    <nav id="examples" aria-label="Сохранённые вопросы"></nav>
+    <p id="example-notice" role="status"></p>
+    <article id="example-answer" aria-label="Ответ на пример"></article>
+  </section>
+</main></body></html>

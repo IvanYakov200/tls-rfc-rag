@@ -17,6 +17,9 @@ def main():
         sub.add_argument("--split", choices=("dev", "test", "test-v1", "holdout", "challenge", "blind"), required=True)
         sub.add_argument("--answers", required=True)
         sub.add_argument("--review", required=True)
+    chat = commands.add_parser("chat", help="Open a local browser interface")
+    chat.add_argument("--port", type=int, default=8765)
+    chat.add_argument("--offline", action="store_true", help="Show saved examples without API access")
     replay = commands.add_parser("replay")
     replay.add_argument("id")
     methods = ("dense", "hybrid", "scoped", "reranked", "final", "multi", "faceted", "direct", "single_no_repeat")
@@ -28,6 +31,15 @@ def main():
     for sub in (ask, batch):
         sub.add_argument("--method", choices=methods, default="direct")
     args = parser.parse_args()
+    if args.command == "chat":
+        from .local_chat import serve
+        if not 1 <= args.port <= 65535:
+            parser.error("Expected port 1–65535")
+        try:
+            serve(args.port, offline=args.offline)
+        except (OSError, ValueError, ImportError) as exc:
+            parser.error(str(exc))
+        return
     if args.command in ("review-template", "score"):
         from .run_review import review_run
         try:
