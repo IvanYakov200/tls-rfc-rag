@@ -9,7 +9,7 @@ from time import monotonic
 
 from .judge import judge
 from .corpus import ROOT, load, questions
-from .evaluation import recall
+from .evaluation import ranking_at_5, recall
 from .run_review import fingerprint, read_index, validate_answer
 
 SPLITS = ("dev", "test", "holdout", "challenge", "blind", "test-v1")
@@ -47,6 +47,8 @@ def report(qs, rows, grades, raw, passages):
     by_key = {p.key: p for p in passages}
     assert set(rows) == {q["id"] for q in qs}
     assert set(grades) == {k for k, r in rows.items() if r["status"] != "generation_failed"}
+    ranking = {q["id"]: ranking_at_5(q, rows[q["id"]]["retrieved"], passages, raw)
+               for q in qs if q["answerable"]}
     for group in (*SPLITS, "current", "all"):
         subset = [q for q in qs if group == "all" or q["split"] == group or
                   (group == "current" and q["split"] != "test-v1")]
@@ -91,6 +93,8 @@ def report(qs, rows, grades, raw, passages):
             "correct": correct,
             "strict": strict,
             "evidence_recall_at_5": mean(recalls),
+            "ndcg_at_5": mean(ranking[q["id"]][0] for q in subset if q["answerable"]),
+            "mrr_at_5": mean(ranking[q["id"]][1] for q in subset if q["answerable"]),
             "evidence_recall_at_40": mean(pool_recalls),
             "verified_citations": citations,
             "full_coverage": recalls.count(1),

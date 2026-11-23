@@ -1,5 +1,6 @@
 """Byte-range evidence coverage and validation of the frozen experiment."""
 import json
+from math import log2
 from statistics import mean
 from .corpus import ROOT, load, questions
 
@@ -28,6 +29,27 @@ def recall(question, hits, raw):
     return max((coverage(group, spans, raw) for group in question["gold_evidence_sets"]), default=None)
 
 
+def ranking_at_5(question, retrieved, passages, raw):
+    """Binary passage relevance: any non-whitespace overlap with annotated evidence."""
+    relevant = set()
+    for group in question["gold_evidence_sets"]:
+        for span in group:
+            rfc = span["rfc"]
+            for p in passages:
+                if p.rfc != rfc:
+                    continue
+                left = max(p.start, span["start_byte"])
+                right = min(p.end, span["end_byte"])
+                if left < right and raw[rfc][left:right].strip():
+                    relevant.add(p.key)
+    if not relevant:
+        raise ValueError(f"No indexed evidence for answerable question {question['id']}")
+    ranks = [i for i, key in enumerate(retrieved[:5], 1) if key in relevant]
+    dcg = sum(1 / log2(i + 1) for i in ranks)
+    ideal = sum(1 / log2(i + 1) for i in range(1, min(5, len(relevant)) + 1))
+    return dcg / ideal, 1 / ranks[0] if ranks else 0.0
+
+
 def verify():
     from collections import defaultdict
     from .all_questions import dataset, report
@@ -42,7 +64,8 @@ def verify():
         raise ValueError("Saved metrics differ from recomputed metrics")
     for r in summary:
         print(f"{r['group']:10} correct {r['correct']}/{r['questions']}, strict {r['strict']}/{r['questions']}, "
-              f"Recall@5 {r['evidence_recall_at_5']:.1%}, faithfulness {r['supported']}/{r['claims']}")
+              f"Recall@5 {r['evidence_recall_at_5']:.1%}, nDCG@5 {r['ndcg_at_5']:.4f}, "
+              f"MRR@5 {r['mrr_at_5']:.4f}, faithfulness {r['supported']}/{r['claims']}")
 
     qs = {q["id"]: q for split in ("test", "holdout", "challenge") for q in questions(split)}
     original = {q["id"]: q for q in questions("test-v1")}
